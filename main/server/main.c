@@ -27,4 +27,6 @@ void app_main()
     ESP_ERROR_CHECK(example_connect());
 
     xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 8, NULL);
+
+    mdns_setup();
 }
