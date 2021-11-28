@@ -1,0 +1,33 @@
+name: test
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'examples/**'
+
+
+jobs:
+  esp8266-test:
+    runs-on: ubuntu-18.04
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: before_install
+      run: |
+        sudo apt update
+        sudo apt install -y gcc git wget make libncurses-dev flex bison python python-serial ninja-build
+
+    - name: install
+      run: |
+        wget https://github.com/espressif/ESP8266_RTOS_SDK/releases/download/v3.4/ESP8266_RTOS_SDK-v3.4.zip
+        unzip ESP8266_RTOS_SDK-v3.4.zip
+        sudo ./ESP8266_RTOS_SDK/install.sh
+
+    - name: script
+      id: script
+      run: |
+        . ./ESP8266_RTOS_SDK/export.sh
+        cd examples
+        idf.py build
+

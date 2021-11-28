@@ -1,4 +1,15 @@
+# src
 .vscode/
 build/
+examples/build
 tmp/
 .history/
+sdkconfig
+sdkconfig.old
+
+# frontend
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
