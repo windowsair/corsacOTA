@@ -71,7 +71,7 @@ static const char *CO_TAG = "corsacOTA";
 #define CO_NO_RETURN                  __attribute__((noreturn))
 #define CO_INLINE                     __attribute__((always_inline))
 
-#define CO_TEST_MODE 0
+#define CO_TEST_MODE                  0
 
 #if (CO_TEST_MODE == 1)
 #warning corsacOTA test mode is in use
@@ -91,12 +91,10 @@ typedef struct co_websocket_cb {
 
     size_t payload_read_len; // the number of payload bytes already read
 
-    union
-    {
+    union {
         uint32_t val;
         uint8_t data[4];
     } mask;
-
 
     bool skip_frame; // skip too long text frames
 } co_websocket_cb_t;
@@ -331,6 +329,11 @@ static co_err_t co_websocket_process_header(co_cb_t *cb, co_socket_cb_t *scb) {
             return CO_OK;
         }
 
+        // check RSV
+        if (data[0] & 0b1110000) {
+            return CO_FAIL; // no extension defining RSV
+        }
+
         // first byte
         fin = (data[0] & WS_FIN) == WS_FIN;
         opcode = data[0] & 0b1111;
@@ -347,10 +350,12 @@ static co_err_t co_websocket_process_header(co_cb_t *cb, co_socket_cb_t *scb) {
             scb->wcb.OPCODE = opcode;
             break;
         case WS_OPCODE_PING:
+        case WS_OPCODE_PONG:
             scb->wcb.OPCODE = opcode;
             break;
         case WS_OPCODE_CLOSE:
-            return CO_FAIL;
+            scb->wcb.OPCODE = opcode;
+            break;
         default:
             return CO_FAIL;
             break;
@@ -430,7 +435,6 @@ static co_err_t co_websocket_send_frame(void *frame_buffer, size_t payload_len, 
     int sz;
     uint16_t payload_length;
     uint8_t *p;
-
 
     payload_length = payload_len;
     sz = co_websocket_get_res_payload_offset(payload_len) + payload_len;
@@ -701,15 +705,31 @@ clean:
 }
 
 // send pong response
+// TODO: too long ping frame
 static void co_websocket_process_ping(co_cb_t *cb, co_socket_cb_t *scb) {
     int len;
 
     // control frame max payload length: 125 -> 0 byte extended length
-    len = 2 + scb->wcb.payload_len;
+    len = 2 + scb->wcb.payload_len + (scb->wcb.MASK ? 4 : 0);
 
     scb->buf[0] = WS_FIN | WS_OPCODE_PONG;
 
     send(scb->fd, scb->buf, len, 0);
+}
+
+// close handshake
+// TODO: array
+static void co_websocket_process_close(co_cb_t *cb, co_socket_cb_t *scb) {
+    uint8_t buf[4];
+    uint8_t *p = buf;
+
+    *p++ = WS_FIN | WS_OPCODE_CLOSE;
+    *p++ = 0x02; // 2 byte status code
+    // normal closure
+    *p++ = 0x03;
+    *p = 0xe8;
+
+    send(scb->fd, buf, 4, 0);
 }
 
 static inline CO_INLINE uint32_t co_rotr32(uint32_t n, unsigned int c) {
@@ -871,6 +891,11 @@ static co_err_t co_websocket_process_payload(co_cb_t *cb, co_socket_cb_t *scb) {
     case WS_OPCODE_PING:
         co_websocket_process_ping(cb, scb);
         break;
+    case WS_OPCODE_PONG:
+        break;
+    case WS_OPCODE_CLOSE:
+        co_websocket_process_close(cb, scb);
+        return CO_FAIL; // close by server
     default:
         ESP_LOGE(CO_TAG, "unknow opcode: %d", scb->wcb.OPCODE);
         break;
