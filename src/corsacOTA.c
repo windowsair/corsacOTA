@@ -1467,6 +1467,7 @@ static void co_socket_close_cleanup(co_cb_t *cb) {
 
         ret = recv(iter->fd, iter->buf, CONFIG_CO_SOCKET_BUFFER_SIZE, 0);
         if (ret == 0 || errno == ENOTCONN) { // client gracefully closed connection
+            close(iter->fd);
             co_socket_buf_free(iter);
 
             iter->status = CO_SOCKET_ACCEPT;
