@@ -71,6 +71,11 @@ static const char *CO_TAG = "corsacOTA";
 #define CO_NO_RETURN                  __attribute__((noreturn))
 #define CO_INLINE                     __attribute__((always_inline))
 
+#define CO_TEST_MODE 0
+
+#if (CO_TEST_MODE == 1)
+#warning corsacOTA test mode is in use
+#endif
 
 /**
  * @brief corsacOTA websocket control block
@@ -398,8 +403,6 @@ static co_err_t co_websocket_process_header(co_cb_t *cb, co_socket_cb_t *scb) {
         } else {
             payload_len = scb->wcb.payload_len;
         }
-        if (scb->wcb.OPCODE == WS_OPCODE_BINARY)
-            printf("payload len:%d\r\n", (int)payload_len);
 
         scb->wcb.payload_len = payload_len;
 
@@ -421,23 +424,20 @@ static co_err_t co_websocket_process_header(co_cb_t *cb, co_socket_cb_t *scb) {
     return CO_OK;
 }
 
-// We promise that the length of the payload should not exceed 1024
+// ~~~We promise that the length of the payload should not exceed 1024~~~
 // TODO: Realizing space sharing
-static co_err_t co_websocket_send_text_frame(void *frame_buffer, size_t payload_len) {
+static co_err_t co_websocket_send_frame(void *frame_buffer, size_t payload_len, int frame_type) {
     int sz;
     uint16_t payload_length;
     uint8_t *p;
 
-    if (payload_len > 1024) {
-        return CO_ERROR_INVALID_SIZE;
-    }
 
     payload_length = payload_len;
     sz = co_websocket_get_res_payload_offset(payload_len) + payload_len;
 
     p = frame_buffer;
     // 2 bytes
-    *p++ = WS_FIN | WS_OPCODE_TEXT;
+    *p++ = WS_FIN | frame_type; // frame_type
     *p++ = (payload_length >= 126 ? 126 : payload_length);
 
     // extended length
@@ -474,7 +474,28 @@ static co_err_t co_websocket_send_msg_with_code(int code, char *msg) {
         goto cleanup;
     }
 
-    ret = co_websocket_send_text_frame(buffer, ret);
+    ret = co_websocket_send_frame(buffer, ret, WS_OPCODE_TEXT);
+
+cleanup:
+    free(buffer);
+    return ret;
+}
+
+// use for test
+static co_err_t co_websocket_send_echo(void *data, size_t len, int frame_type) {
+    char *buffer;
+    int ret;
+    int offset;
+
+    offset = co_websocket_get_res_payload_offset(len);
+    buffer = malloc(offset + len);
+    if (buffer == NULL) {
+        ret = CO_ERROR_NO_MEM;
+        goto cleanup;
+    }
+    memcpy(buffer + offset, data, len);
+
+    ret = co_websocket_send_frame(buffer, len, frame_type);
 
 cleanup:
     free(buffer);
@@ -599,9 +620,7 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
     char *err_msg;
     int ret;
     bool is_done;
-    for (int i = 0; i < len; i++) {
-        printf("%02X", ((unsigned char *)data)[i]);
-    }
+
     if (global_cb->ota.status == CO_OTA_LOAD) {
         global_cb->ota.offset += (int)len;
         is_done = global_cb->ota.total_size == global_cb->ota.offset;
@@ -805,6 +824,10 @@ static co_err_t co_websocket_process_payload(co_cb_t *cb, co_socket_cb_t *scb) {
     // In the previous processing, we can ensure that each new frame can begin in a place where the Buffer offset is 0.
     switch (scb->wcb.OPCODE) {
     case WS_OPCODE_TEXT:
+#if (CO_TEST_MODE == 1)
+        co_websocket_send_echo(data, len, WS_OPCODE_TEXT);
+        break;
+#endif
         // case 0: This frame should be skip
         if (scb->wcb.skip_frame) {
             if (len == scb->wcb.payload_len) { // The last part of the data in this frame has been received
@@ -839,6 +862,10 @@ static co_err_t co_websocket_process_payload(co_cb_t *cb, co_socket_cb_t *scb) {
         }
         break;
     case WS_OPCODE_BINARY:
+#if (CO_TEST_MODE == 1)
+        co_websocket_send_echo(data, len, WS_OPCODE_BINARY);
+        break;
+#endif
         co_websocket_process_binary(data, len);
         break;
     case WS_OPCODE_PING:
@@ -942,7 +969,7 @@ static const char *co_http_header_find_field_value(const char *header_start, con
 
     field_start = header_start;
     do {
-        field_start = strstr(field_start + 1, field_name);
+        field_start = strcasestr(field_start + 1, field_name);
         field_end = field_start + field_name_len - 1;
 
         if (field_start != NULL && field_start - header_start >= 2 && field_start[-2] == '\r' && field_start[-1] == '\n') { // is start with "\r\n" ?
@@ -957,7 +984,7 @@ static const char *co_http_header_find_field_value(const char *header_start, con
     }
 
     // find the field terminator
-    next_crlf = strstr(field_start, "\r\n");
+    next_crlf = strcasestr(field_start, "\r\n");
     if (next_crlf == NULL) {
         return NULL; // Malformed HTTP header!
     }
@@ -967,7 +994,7 @@ static const char *co_http_header_find_field_value(const char *header_start, con
         return field_end + 2; // 2 for ':'  ' '(blank)
     }
 
-    value_start = strstr(field_start, value);
+    value_start = strcasestr(field_start, value);
     if (value_start == NULL) {
         return NULL;
     }
@@ -1033,6 +1060,7 @@ static esp_err_t co_websocket_handshake_send_key(int fd, const char *client_key)
 
     snprintf(res_header, sizeof(res_header),
              "HTTP/1.1 101 Switching Protocols\r\n"
+             "Server: corsacOTA server\r\n"
              "Upgrade: websocket\r\n"
              "Connection: Upgrade\r\n"
              "Sec-WebSocket-Accept: %s\r\n"
