@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'frontend/**'
 
 jobs:
   build_and_deploy_job:
