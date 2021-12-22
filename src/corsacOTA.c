@@ -131,11 +131,12 @@ typedef struct co_ota_cb {
     enum co_ota_status {
         CO_OTA_INIT = 0,
         CO_OTA_LOAD,
+        CO_OTA_DONE,
+        CO_OTA_STOP,
         CO_OTA_ERROR,
         CO_OTA_FATAL_ERROR,
-        CO_OTA_DONE,
     } status;
-    int32_t error_code;
+    int32_t error_code;   //// TODO: ?
 
     esp_partition_t *update_ptn;
     esp_partition_t *running_ptn;
@@ -466,14 +467,20 @@ static co_err_t co_websocket_send_msg_with_code(int code, char *msg) {
 
     len = strlen(msg);
     offset = co_websocket_get_res_payload_offset(len);
-    buffer = malloc(offset + len + 20);
+    buffer = malloc(offset + len + 25);
     if (buffer == NULL) {
         ret = CO_ERROR_NO_MEM;
         goto cleanup;
     }
-    //// TODO: with status?
-    ret = snprintf(buffer + offset, len + 19, "code=%d&data=\"%s\"", code, msg);
+    //// TODO: with websocket status?
+    if (code == CO_RES_SUCCESS) {
+        ret = snprintf(buffer + offset, len + 24, "code=%d&data=\"%s\"", code, msg);
+    } else {
+        ret = snprintf(buffer + offset, len + 24, "code=%d&data=\"msg=%s\"", code, msg);
+    }
+
     if (ret < 0) {
+        //global_cb->websocket->status = CO_SOCKET_CLOSING;
         ret = CO_ERROR_INVALID_ARG;
         goto cleanup;
     }
@@ -588,17 +595,22 @@ static const char *co_ota_end() {
  *
  * @param data Pointer to a string indicating the size of the firmware
  */
-static void co_ota_start(void *data) {
+static void co_ota_start(void *data) { // TODO: return value -> status
     const char *res_msg = "deviceType=esp8266&state=ready&offset=0";
     char *err_msg;
     int size;
 
-    if (global_cb->ota.status != CO_OTA_INIT) {
-        co_websocket_send_msg_with_code(CO_RES_INVALID_STATUS, "");
-        return;
-    }
+    // may be we should ignore status...
+    // if (global_cb->ota.status != CO_OTA_INIT && global_cb->ota.status != CO_OTA_STOP) {
+    //     co_websocket_send_msg_with_code(CO_RES_INVALID_STATUS, "OTA has not started");
+    //     return;
+    // }
 
     size = atoi(data);
+    if (size < 1) {
+        co_websocket_send_msg_with_code(CO_RES_INVALID_SIZE, "Invalid size");
+        return;
+    }
 
     err_msg = co_ota_init(size);
     if (err_msg != NULL) {
@@ -608,15 +620,28 @@ static void co_ota_start(void *data) {
 
     global_cb->ota.status = CO_OTA_LOAD;
     global_cb->ota.total_size = size;
-    global_cb->ota.chunk_size = min(global_cb->ota.total_size / 10, 1024 * 10); // 10KB default
+
+
+    size = min(global_cb->ota.total_size / 10, 1024 * 10); // 10KB default
+    if (size == 0) {
+        size = 1; // Firmware too small...
+    }
+
+    global_cb->ota.chunk_size = size;
+    global_cb->ota.offset = 0;
     global_cb->ota.last_index_offset = 0;
 
     co_websocket_send_msg_with_code(CO_RES_SUCCESS, res_msg);
 }
 
 static void co_ota_stop(void *data) {
-    //// TODO: clear status and restart
-    co_websocket_send_msg_with_code(CO_RES_SUCCESS, "");
+    if (global_cb->ota.status != CO_OTA_FATAL_ERROR) {
+        memset(&global_cb->ota, 0, sizeof(global_cb->ota));
+        global_cb->ota.status = CO_OTA_STOP;
+        co_websocket_send_msg_with_code(CO_RES_SUCCESS, "");
+    } else {
+        co_websocket_send_msg_with_code(CO_RES_SYSTEM_ERROR, "Fatal error");
+    }
 }
 
 static void co_websocket_process_binary(uint8_t *data, size_t len) {
@@ -668,7 +693,8 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
         }
 
         co_websocket_send_msg_with_code(CO_RES_SUCCESS, res);
-    } else {
+    } else if (global_cb->ota.status != CO_OTA_STOP) {
+        // skip the rest of the frame when a stop command is received
         co_websocket_send_msg_with_code(CO_RES_INVALID_STATUS, "OTA has not started");
     }
 }
@@ -886,6 +912,7 @@ static co_err_t co_websocket_process_payload(co_cb_t *cb, co_socket_cb_t *scb) {
         co_websocket_send_echo(data, len, WS_OPCODE_BINARY);
         break;
 #endif
+        //// TODO: check return val
         co_websocket_process_binary(data, len);
         break;
     case WS_OPCODE_PING:

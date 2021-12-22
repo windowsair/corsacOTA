@@ -393,13 +393,15 @@ export default {
     const progress = ref('0%')
     const dragging = ref(false)
 
+    const defaultChunkSize = 1024 * 12 // default : 12KB
+
     const ota = reactive({
       errMsg: '',
       state: 'connect',
       deviceType: '',
 
       totalSize: 0,
-      chunkSize: 1024 * 12, // default : 12KB
+      chunkSize: defaultChunkSize,
       offset: 0,
       file: {},
       reader: {},
@@ -448,6 +450,7 @@ export default {
       ota.errMsg = ''
       ota.offset = 0
       ota.deviceType = ''
+      ota.chunkSize = defaultChunkSize
       ota.reader = new FileReader()
 
       progress.value = '0%'
@@ -648,7 +651,8 @@ export default {
 
         ota.state = 'uploading'
         ota.totalSize = ota.file.size
-        ota.chunkSize = Math.min(ota.chunkSize, Math.floor(ota.totalSize / 10)) // default: 10KB
+        ota.chunkSize = Math.min(defaultChunkSize, Math.floor(ota.totalSize / 10))
+        ota.chunkSize = ota.chunkSize < 1 ? 1 : ota.chunkSize // Firmware too small...
 
         ota.reader.onload = onFileReaderLoad
         // start
