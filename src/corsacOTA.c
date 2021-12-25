@@ -138,8 +138,8 @@ typedef struct co_ota_cb {
     } status;
     int32_t error_code; //// TODO: ?
 
-    esp_partition_t *update_ptn;
-    esp_partition_t *running_ptn;
+    const esp_partition_t *update_ptn;
+    const esp_partition_t *running_ptn;
     esp_ota_handle_t update_handle;
 
     int32_t total_size;        // Total firmware size
@@ -204,7 +204,7 @@ static int co_compare(const void *s1, const void *s2) {
 
 static co_process_fn_t co_get_process_entry(char *str) {
     co_process_entry_t *res;
-    co_process_entry_t key = {str};
+    co_process_entry_t key = {str, NULL};
 
     res = bsearch(&key, co_entry_dict, CO_ENTRY_DICT_LEN, CO_ENTRT_DICT_ITEM_LEN, co_compare);
     if (res) {
@@ -320,7 +320,7 @@ static inline int co_websocket_get_res_payload_offset(int payload_len) {
 
 static co_err_t co_websocket_process_header(co_cb_t *cb, co_socket_cb_t *scb) {
     uint8_t opcode, fin, mask;
-    size_t payload_len;
+    uint64_t payload_len;
     uint8_t *data;
 
     data = (uint8_t *)scb->buf;
@@ -459,7 +459,7 @@ static co_err_t co_websocket_send_frame(void *frame_buffer, size_t payload_len, 
 }
 
 // Create a new frame buffer, construct text and send frame.
-static co_err_t co_websocket_send_msg_with_code(int code, char *msg) {
+static co_err_t co_websocket_send_msg_with_code(int code, const char *msg) {
     char *buffer;
     int len, ret;
     int offset;
@@ -491,6 +491,7 @@ cleanup:
     return ret;
 }
 
+#if (CO_TEST_MODE == 1)
 // use for test
 static co_err_t co_websocket_send_echo(void *data, size_t len, int frame_type) {
     char *buffer;
@@ -511,6 +512,7 @@ cleanup:
     free(buffer);
     return ret;
 }
+#endif // (CO_TEST_MODE == 1)
 
 static const char *co_ota_error_to_msg(esp_err_t err) {
     switch (err) {
@@ -545,7 +547,7 @@ static const char *co_ota_error_to_msg(esp_err_t err) {
  * @return const char* Error message, returns NULL indicating that no error occurred
  */
 static const char *co_ota_init(int32_t size) {
-    esp_partition_t *boot_ptn, *running_ptn, *update_ptn;
+    const esp_partition_t *boot_ptn, *running_ptn, *update_ptn;
     esp_err_t ret;
 
     boot_ptn = esp_ota_get_boot_partition();
@@ -594,7 +596,7 @@ static const char *co_ota_end() {
  */
 static void co_ota_start(void *data) { // TODO: return value -> status
     const char *res_msg = "deviceType=esp8266&state=ready&offset=0";
-    char *err_msg;
+    const char *err_msg;
     int size;
 
     // may be we should ignore status...
@@ -642,8 +644,7 @@ static void co_ota_stop(void *data) {
 
 static void co_websocket_process_binary(uint8_t *data, size_t len) {
     char res[32]; // state=ready&offset=2147483647
-    char *err_msg;
-    int ret;
+    const char *err_msg;
     bool is_done;
 
     if (global_cb->ota.status == CO_OTA_LOAD) {
@@ -693,7 +694,6 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
 }
 
 static void co_websocket_process_text(uint8_t *data, size_t len) {
-    int ret;
     char op_field[10 + 1], data_field[10 + 1];
     char *text;
     co_process_fn_t fn;
@@ -821,7 +821,7 @@ void co_websocket_fast_mask(uint8_t *data, uint32_t mask, size_t len) {
     }
 }
 
-static CO_INLINE uint32_t co_websocket_get_new_mask(uint32_t mask, size_t len) {
+static inline uint32_t co_websocket_get_new_mask(uint32_t mask, size_t len) {
     switch (len & 0b11) {
     case 1:
         return co_rotr32(mask, 8U);
@@ -1197,6 +1197,7 @@ static esp_err_t co_socket_data_process(co_cb_t *cb, co_socket_cb_t *scb) {
     switch (scb->status) {
     case CO_SOCKET_ACCEPT:
         ESP_LOGW(CO_TAG, LOG_FMT("This state should not occur"));
+        return ESP_FAIL; //// TODO: remove this?
     case CO_SOCKET_HANDSHAKE:
         return co_websocket_handshake_process(cb, scb);
     case CO_SOCKET_WEBSOCKET_HEADER:
@@ -1614,7 +1615,7 @@ static esp_err_t co_select_process(co_cb_t *cb) {
 }
 
 static void co_main_thread(void *pvParameter) {
-    co_config_t *server_config = (co_config_t *)pvParameter;
+    // co_config_t *server_config = (co_config_t *)pvParameter;
     ESP_LOGI(CO_TAG, "start corsacOTA thread..."); // TODO: debug
 
     do {
