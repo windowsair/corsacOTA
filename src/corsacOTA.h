@@ -52,8 +52,8 @@ typedef struct co_config {
     int listen_port;    // corsacOTA server listen port
     int max_listen_num; // Maximum number of connections. In fact, after the handshake is complete, there is only one connection to provide services.
 
-    int recv_wait_timeout; // Timeout for recv function (in seconds)
-    int send_wait_timeout; // Timeout for send function (in seconds)
+    int wait_timeout_sec; // Timeout (in seconds)
+    int wait_timeout_usec; // Timeout (in microseconds)
 
 } co_config_t;
 

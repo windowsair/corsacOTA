@@ -136,7 +136,7 @@ typedef struct co_ota_cb {
         CO_OTA_ERROR,
         CO_OTA_FATAL_ERROR,
     } status;
-    int32_t error_code;   //// TODO: ?
+    int32_t error_code; //// TODO: ?
 
     esp_partition_t *update_ptn;
     esp_partition_t *running_ptn;
@@ -160,8 +160,8 @@ typedef struct co_cb {
     int recv_data_offset; // (text mode)
     int max_listen_num;   // maxium number of connections. In fact, after the handshake is complete, there is only one connection to provide services
 
-    int recv_wait_timeout; // timeout for recv function (in seconds)
-    int send_wait_timeout; // timeout for send function (in seconds)
+    int wait_timeout_sec;  // timeout (in seconds)
+    int wait_timeout_usec; // timeout (in microseconds)
 
     co_socket_cb_t **socket_list; // socket control block list
     co_socket_cb_t *websocket;    // the only valid socket in the list
@@ -480,7 +480,7 @@ static co_err_t co_websocket_send_msg_with_code(int code, char *msg) {
     }
 
     if (ret < 0) {
-        //global_cb->websocket->status = CO_SOCKET_CLOSING;
+        // global_cb->websocket->status = CO_SOCKET_CLOSING;
         ret = CO_ERROR_INVALID_ARG;
         goto cleanup;
     }
@@ -621,7 +621,6 @@ static void co_ota_start(void *data) { // TODO: return value -> status
     global_cb->ota.status = CO_OTA_LOAD;
     global_cb->ota.total_size = size;
 
-
     size = min(global_cb->ota.total_size / 10, 1024 * 10); // 10KB default
     if (size == 0) {
         size = 1; // Firmware too small...
@@ -659,8 +658,9 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
 
         err_msg = co_ota_write(data, len);
         if (err_msg != NULL) {
+            memset(&global_cb->ota, 0, sizeof(global_cb->ota));
+            global_cb->ota.status = CO_OTA_STOP;
             co_websocket_send_msg_with_code(CO_RES_SYSTEM_ERROR, err_msg);
-            // TODO: terminate?
             return;
         }
 
@@ -1328,9 +1328,9 @@ static co_cb_t *co_control_block_create(co_config_t *config) {
     }
 
     // setting
-    cb->max_listen_num = config->max_listen_num;
-    cb->recv_wait_timeout = config->recv_wait_timeout;
-    cb->send_wait_timeout = config->send_wait_timeout;
+    cb->max_listen_num = config->max_listen_num; //// TODO: check sdkconfig
+    cb->wait_timeout_sec = config->wait_timeout_sec;
+    cb->wait_timeout_usec = config->wait_timeout_usec;
 
     cb->listen_fd = -1;
     cb->websocket_fd = -1;
@@ -1353,11 +1353,18 @@ static void co_free_all(co_cb_t *cb) {
     if (cb->socket_list != NULL) {
         for (i = 0; i < cb->max_listen_num; i++) {
             if (cb->socket_list[i] != NULL) {
+                if (cb->socket_list[i]->fd != -1) {
+                    close(cb->socket_list[i]->fd);
+                }
                 free(cb->socket_list[i]->buf);
             }
             free(cb->socket_list[i]);
         }
         free(cb->socket_list);
+    }
+
+    if (cb->listen_fd != -1) {
+        close(cb->listen_fd);
     }
 
     free(cb->recv_data);
@@ -1440,13 +1447,13 @@ static esp_err_t co_socket_accept(co_cb_t *cb) {
 
     struct timeval tv;
     // set recv timrout
-    tv.tv_sec = cb->recv_wait_timeout;
-    tv.tv_usec = 0;
+    tv.tv_sec = cb->wait_timeout_usec;
+    tv.tv_usec = cb->wait_timeout_usec;
     setsockopt(new_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
 
     // set send timeout
-    tv.tv_sec = cb->send_wait_timeout;
-    tv.tv_usec = 0;
+    tv.tv_sec = cb->wait_timeout_usec;
+    tv.tv_usec = cb->wait_timeout_usec;
     setsockopt(new_fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv));
 
     // try to add to the socket list
@@ -1577,9 +1584,9 @@ static esp_err_t co_select_process(co_cb_t *cb) {
     maxfd = MAX(maxfd, cb->listen_fd);
 
     struct timeval tv;
-    /* Set recv timeout of this fd as per config */
-    tv.tv_sec = 7;
-    tv.tv_usec = 0;
+    // Set recv timeout of this fd as per config
+    tv.tv_sec = cb->wait_timeout_sec;
+    tv.tv_usec = cb->wait_timeout_usec;
 
     int ret = select(maxfd + 1, &read_set, NULL, NULL, &tv);
     if (ret < 0) {
@@ -1587,7 +1594,7 @@ static esp_err_t co_select_process(co_cb_t *cb) {
         co_select_clean_invalid(cb);
         return ESP_OK;
     } else if (ret == 0) {
-        // TODO: timeout
+        return ESP_ERR_TIMEOUT;
     }
 
     // 1. Find out if there is any data available on the socket list
@@ -1620,11 +1627,13 @@ static esp_err_t co_select_process(co_cb_t *cb) {
 static void co_main_thread(void *pvParameter) {
     co_config_t *server_config = (co_config_t *)pvParameter;
     ESP_LOGI(CO_TAG, "start corsacOTA thread..."); // TODO: debug
-    while (1) {
-        if (co_select_process(global_cb) != ESP_OK) {
-            break;
-        }
-    }
+
+    do {
+        ;
+    } while (co_select_process(global_cb) == ESP_OK);
+
+    co_free_all(global_cb);
+    vTaskDelete(NULL);
 }
 
 static inline int co_thread_create(co_config_t *config) {
