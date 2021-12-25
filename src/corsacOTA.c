@@ -430,8 +430,7 @@ static co_err_t co_websocket_process_header(co_cb_t *cb, co_socket_cb_t *scb) {
     return CO_OK;
 }
 
-// ~~~We promise that the length of the payload should not exceed 1024~~~
-// TODO: Realizing space sharing
+// We promise that the length of the payload should not exceed 65535
 static co_err_t co_websocket_send_frame(void *frame_buffer, size_t payload_len, int frame_type) {
     int sz;
     uint16_t payload_length;
@@ -472,7 +471,7 @@ static co_err_t co_websocket_send_msg_with_code(int code, char *msg) {
         ret = CO_ERROR_NO_MEM;
         goto cleanup;
     }
-    //// TODO: with websocket status?
+
     if (code == CO_RES_SUCCESS) {
         ret = snprintf(buffer + offset, len + 24, "code=%d&data=\"%s\"", code, msg);
     } else {
@@ -480,7 +479,7 @@ static co_err_t co_websocket_send_msg_with_code(int code, char *msg) {
     }
 
     if (ret < 0) {
-        // global_cb->websocket->status = CO_SOCKET_CLOSING;
+        ESP_LOGE(CO_TAG, "invalid arg");
         ret = CO_ERROR_INVALID_ARG;
         goto cleanup;
     }
@@ -557,10 +556,8 @@ static const char *co_ota_init(int32_t size) {
 
     update_ptn = esp_ota_get_next_update_partition(NULL);
     if (update_ptn == NULL) {
-        //// TODO: global status handle
         global_cb->ota.status = CO_OTA_FATAL_ERROR;
         global_cb->ota.error_code = CO_ERROR_INVALID_OTA_PTN;
-        //// close socket?
         return "Invalid OTA data partition";
     }
 
@@ -652,7 +649,8 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
     if (global_cb->ota.status == CO_OTA_LOAD) {
         global_cb->ota.offset += (int)len;
         is_done = global_cb->ota.total_size == global_cb->ota.offset;
-        if (is_done) { //// FIXME: wrong status!
+        if (is_done) {
+            // If everything is fine, then we will restart chip afterwards, which does not require the use of the status
             global_cb->ota.status = CO_OTA_INIT;
         }
 
@@ -671,11 +669,7 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
 
         global_cb->ota.last_index_offset = global_cb->ota.offset;
 
-        ret = snprintf(res, 32, "state=%s&offset=%d", is_done ? "done" : "ready", global_cb->ota.offset);
-        if (ret < 0) {
-            // TODO: error
-            return;
-        }
+        snprintf(res, 32, "state=%s&offset=%d", is_done ? "done" : "ready", global_cb->ota.offset);
 
         if (is_done) {
             err_msg = co_ota_end();
@@ -686,8 +680,7 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
 
             co_websocket_send_msg_with_code(CO_RES_SUCCESS, res);
 
-            ESP_LOGW(CO_TAG, "prepare to restart");
-            //// TODO: wait tcp buffer send done
+            ESP_LOGD(CO_TAG, "prepare to restart");
             vTaskDelay(pdMS_TO_TICKS(5000));
             co_hardware_restart();
         }
@@ -974,8 +967,6 @@ static esp_err_t co_websocket_process(co_cb_t *cb, co_socket_cb_t *scb) {
 
     ret = recv(fd, scb->buf + offset, CONFIG_CO_SOCKET_BUFFER_SIZE - offset, 0);
     if (ret <= 0) {
-        //// TODO:remove this
-        ESP_LOGD(CO_TAG, LOG_FMT("error in recv (%d)"), ret);
         return ESP_FAIL;
     }
     scb->remaining_len += ret;
@@ -1135,8 +1126,6 @@ static esp_err_t co_websocket_handshake_process(co_cb_t *cb, co_socket_cb_t *scb
 
     int ret = recv(fd, scb->buf + offset, CONFIG_CO_SOCKET_BUFFER_SIZE - offset, 0);
     if (ret <= 0) {
-        // TODO: remove this
-        ESP_LOGD(CO_TAG, LOG_FMT("error in recv (%d)"), ret);
         co_http_error_400_response(cb, scb);
         return ESP_FAIL;
     }
@@ -1328,7 +1317,7 @@ static co_cb_t *co_control_block_create(co_config_t *config) {
     }
 
     // setting
-    cb->max_listen_num = config->max_listen_num; //// TODO: check sdkconfig
+    cb->max_listen_num = config->max_listen_num;
     cb->wait_timeout_sec = config->wait_timeout_sec;
     cb->wait_timeout_usec = config->wait_timeout_usec;
 
@@ -1343,7 +1332,7 @@ static co_cb_t *co_control_block_create(co_config_t *config) {
     }
     return cb;
 }
-////FIXME: all case
+
 static void co_free_all(co_cb_t *cb) {
     if (cb == NULL) {
         return;
