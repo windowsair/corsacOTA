@@ -67,6 +67,8 @@ corsacOTA provides a default frontend for performing online OTA, and you can als
 
 ![postman screenshot](assets/postman.png)
 
+### Parition table
+Currently supported OTA partition table modes: Factory app, two OTA definitions.
 
 ### Motivation and Notes
 

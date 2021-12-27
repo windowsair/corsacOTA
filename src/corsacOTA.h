@@ -22,6 +22,10 @@
 #ifndef _CORSACOTA_H_
 #define _CORSACOTA_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef signed int co_err_t;
 
 #define CO_OK                    0
@@ -67,5 +71,9 @@ typedef struct co_config {
  *  - ESP_ERR_NO_MEM           : Failed to allocate memory for instance
  */
 int corsacOTA_init(co_handle_t *handle, co_config_t *config);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

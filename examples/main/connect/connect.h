@@ -6,7 +6,6 @@ extern "C" {
 #endif
 
 #include "esp_err.h"
-#include "tcpip_adapter.h"
 
 #define EXAMPLE_INTERFACE TCPIP_ADAPTER_IF_STA
 

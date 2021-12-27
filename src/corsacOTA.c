@@ -33,6 +33,10 @@
 #include "mbedtls/base64.h"
 #include "mbedtls/sha1.h"
 
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "esp_system.h"
+
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -40,18 +44,30 @@
 
 #include "sdkconfig.h"
 #if (defined CONFIG_IDF_TARGET_ESP8266) && (CONFIG_IDF_TARGET_ESP8266 == 1)
-#define CO_TARGET_ESP8266 1
+#define CO_TARGET_ESP8266   1
+#define CO_DEVICE_TYPE_NAME "esp8266"
 #include "esp8266/eagle_soc.h"
-#include "esp_ota_ops.h"
-#include "esp_partition.h"
-#include "esp_system.h"
 #endif
 
 #if (defined CONFIG_IDF_TARGET_ESP32) && (CONFIG_IDF_TARGET_ESP32 == 1)
-#define CO_TARGET_ESP32 1
+#define CO_TARGET_ESP32     1
+#define CO_DEVICE_TYPE_NAME "esp32"
+#include "esp32/rom/uart.h"
+#include "hal/wdt_hal.h"
+#include "hal/wdt_types.h"
+#include "soc/rtc.h"
 #endif
 
-#if (!defined CO_TARGET_ESP8266) && (!defined CO_TARGET_ESP32)
+#if (defined CONFIG_IDF_TARGET_ESP32S2) && (CONFIG_IDF_TARGET_ESP32S2 == 1)
+#define CO_DEVICE_TYPE_NAME "esp32s2"
+#define CO_TARGET_ESP32     1
+#include "esp32s2/rom/uart.h"
+#include "hal/wdt_hal.h"
+#include "hal/wdt_types.h"
+#include "soc/rtc.h"
+#endif
+
+#if (!defined CO_TARGET_ESP8266) && (!defined CO_TARGET_ESP32) && (!defined CONFIG_IDF_TARGET_ESP32S2)
 #error Unknown hardware platform
 #endif
 
@@ -223,6 +239,9 @@ extern void esp_reset_reason_set_hint(esp_reset_reason_t hint);
  *
  */
 static void CO_NO_RETURN co_hardware_restart() {
+
+    vPortEnterCritical(); // avoid entering the panicHandler
+
     uart_tx_wait_idle(0);
     uart_tx_wait_idle(1);
 
@@ -249,6 +268,40 @@ static void CO_NO_RETURN co_hardware_restart() {
     }
 }
 #endif // CO_TARGET_ESP8266
+
+#if (CO_TARGET_ESP32)
+extern void uart_tx_wait_idle(uint8_t uart_no);
+extern void esp_reset_reason_set_hint(esp_reset_reason_t hint);
+extern void xt_ints_off(unsigned int mask);
+
+/**
+ * @brief In some cases, reboot operation cannot be completed properly, so we take a forced reboot.
+ *
+ */
+void CO_NO_RETURN co_hardware_restart() {
+    wdt_hal_context_t rtc_wdt_ctx;
+    uint32_t stage_timeout_ticks;
+
+    xt_ints_off(0xFFFFFFFF); // disable all interrupts
+
+    uart_tx_wait_idle(0);
+    uart_tx_wait_idle(1);
+    uart_tx_wait_idle(2);
+
+    wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, false);
+    stage_timeout_ticks = (uint32_t)(1000ULL * rtc_clk_slow_freq_get_hz() / 1000ULL);
+    wdt_hal_write_protect_disable(&rtc_wdt_ctx);
+    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE0, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_SYSTEM);
+    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE1, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_RTC);
+    wdt_hal_set_flashboot_en(&rtc_wdt_ctx, true);
+    wdt_hal_write_protect_enable(&rtc_wdt_ctx);
+
+    esp_reset_reason_set_hint(ESP_RST_SW); // software restart
+
+    while (1) {
+    }
+}
+#endif // CO_TARGET_ESP32
 
 /**
  * @brief Parse the request text and populate the op and data.
@@ -595,7 +648,7 @@ static const char *co_ota_end() {
  * @param data Pointer to a string indicating the size of the firmware
  */
 static void co_ota_start(void *data) { // TODO: return value -> status
-    const char *res_msg = "deviceType=esp8266&state=ready&offset=0";
+    const char *res_msg = "deviceType=" CO_DEVICE_TYPE_NAME "&state=ready&offset=0";
     const char *err_msg;
     int size;
 
