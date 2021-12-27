@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/**'
       - 'examples/**'
+      - '.github/**'
 
 
 jobs:
