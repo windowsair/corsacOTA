@@ -30,4 +30,31 @@ jobs:
         . ./ESP8266_RTOS_SDK/export.sh
         cd examples
         idf.py build
+####
+####
+####
+  esp32-test:
+    runs-on: ubuntu-18.04
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: before_install
+      run: |
+        sudo apt update
+        sudo apt install -y gcc git wget make libncurses-dev flex bison python3 python3-pip python-serial ninja-build
+
+    - name: install
+      run: |
+        wget https://github.com/espressif/esp-idf/releases/download/v4.3.2/esp-idf-v4.3.2.zip
+        unzip esp-idf-v4.3.2.zip
+        sudo ./esp-idf-v4.3.2/install.sh
+
+    - name: script
+      id: script
+      run: |
+        . ./esp-idf-v4.3.2/export.sh
+        cd examples
+        idf.py build
+
+
 
