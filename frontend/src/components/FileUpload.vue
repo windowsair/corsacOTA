@@ -156,7 +156,6 @@
       <div class="relative mt-5">
         <input
           type="text"
-          placeholder="OTA.local:3241"
           spellcheck="false"
           name="ota address"
           v-model="serverInfo.address"
@@ -389,6 +388,16 @@ export default {
     successAnimation,
   },
   setup(props, { emit }) {
+    // address bind
+    // -> ?address=192.168.1.2:3241
+    const pageParams = new URL(document.URL).searchParams
+    const pageAddressParams = pageParams.get('address')
+    const serverInfo = reactive({
+      address: pageAddressParams || 'OTA.local:3241',
+    })
+
+    //
+
     const files = ref([])
     const progress = ref('0%')
     const dragging = ref(false)
@@ -458,9 +467,6 @@ export default {
 
     let ws = {}
 
-    const serverInfo = reactive({
-      address: 'OTA.local:3241',
-    })
 
     const parseResData = (str) => {
       let code, data
@@ -605,9 +611,6 @@ export default {
         ota.reader.readAsArrayBuffer(
           ota.file.slice(ota.offset, ota.offset + ota.chunkSize)
         )
-      } else {
-        // TODO: change page
-        console.log('all done!')
       }
     }
 
