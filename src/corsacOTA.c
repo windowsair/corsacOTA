@@ -1100,7 +1100,7 @@ static const char *co_http_header_find_field_value(const char *header_start, con
     }
 
     // The value we found should be properly delineated from the other tokens
-    if (isalnum(value_start[-1]) || isalnum(value_start[strlen(value)])) {
+    if (isalnum((unsigned char)value_start[-1]) || isalnum((unsigned char)value_start[strlen(value)])) {
         // "field_name: value1, value2,"
         // Consecutive tokens will be considered as errors.
         return NULL;
