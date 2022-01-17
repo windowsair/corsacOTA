@@ -59,6 +59,8 @@ co_config_t config = {
 corsacOTA_init(&handle, &config);
 ```
 
+Related examples of use can be found here: [examples](./examples)
+
 ## Document
 
 ### API for frontend
