@@ -11,7 +11,7 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 
 # Then set a flash size
-# CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
 ```
 
 The flash size of the board can be checked with the following command:

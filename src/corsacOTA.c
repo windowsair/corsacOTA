@@ -67,7 +67,16 @@
 #include "soc/rtc.h"
 #endif
 
-#if (!defined CO_TARGET_ESP8266) && (!defined CO_TARGET_ESP32) && (!defined CONFIG_IDF_TARGET_ESP32S2)
+#if (defined CONFIG_IDF_TARGET_ESP32C3) && (CONFIG_IDF_TARGET_ESP32C3 == 1)
+#define CO_DEVICE_TYPE_NAME "esp32c3"
+#define CO_TARGET_ESP32C3     1
+#include "esp32c3/rom/uart.h"
+#include "hal/wdt_hal.h"
+#include "hal/wdt_types.h"
+#include "soc/rtc.h"
+#endif
+
+#if (!defined CO_TARGET_ESP8266) && (!defined CO_TARGET_ESP32) && (!defined CONFIG_IDF_TARGET_ESP32S2) && (!defined CONFIG_IDF_TARGET_ESP32C3)
 #error Unknown hardware platform
 #endif
 
@@ -301,6 +310,37 @@ void CO_NO_RETURN co_hardware_restart() {
     while (1) {
     }
 }
+#elif (CO_TARGET_ESP32C3)
+extern void uart_tx_wait_idle(uint8_t uart_no);
+extern void esp_reset_reason_set_hint(esp_reset_reason_t hint);
+extern void riscv_global_interrupts_disable(void);
+/**
+ * @brief In some cases, reboot operation cannot be completed properly, so we take a forced reboot.
+ *
+ */
+void CO_NO_RETURN co_hardware_restart() {
+    wdt_hal_context_t rtc_wdt_ctx;
+    uint32_t stage_timeout_ticks;
+
+    riscv_global_interrupts_disable(); // disable all interrupts
+
+    uart_tx_wait_idle(0);
+    uart_tx_wait_idle(1);
+
+    wdt_hal_init(&rtc_wdt_ctx, WDT_RWDT, 0, false);
+    stage_timeout_ticks = (uint32_t)(1000ULL * rtc_clk_slow_freq_get_hz() / 1000ULL);
+    wdt_hal_write_protect_disable(&rtc_wdt_ctx);
+    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE0, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_SYSTEM);
+    wdt_hal_config_stage(&rtc_wdt_ctx, WDT_STAGE1, stage_timeout_ticks, WDT_STAGE_ACTION_RESET_RTC);
+    wdt_hal_set_flashboot_en(&rtc_wdt_ctx, true);
+    wdt_hal_write_protect_enable(&rtc_wdt_ctx);
+
+    esp_reset_reason_set_hint(ESP_RST_SW); // software restart
+
+    while (1) {
+    }
+}
+
 #endif // CO_TARGET_ESP32
 
 /**
