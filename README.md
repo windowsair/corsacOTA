@@ -31,6 +31,12 @@ An esp8266/esp32 websocket OTA library.
 - ✂️ No need to embed the frontend page, lower firmware and memory usage.
 - 🚀 Lightweight and fast WebSocket implementation.
 
+Support device
+
+- [x] esp8266/esp8285
+- [x] esp32
+- [x] esp32c3
+- [x] esp32s3
 
 ## Use the web client for OTA
 
