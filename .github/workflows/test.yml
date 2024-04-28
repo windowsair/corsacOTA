@@ -1,4 +1,4 @@
-name: test
+name: Example build test
 
 on:
   push:
@@ -6,56 +6,53 @@ on:
       - 'src/**'
       - 'examples/**'
       - '.github/**'
-
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'examples/**'
+      - '.github/**'
 
 jobs:
   esp8266-test:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: before_install
       run: |
         sudo apt update
-        sudo apt install -y gcc git wget make libncurses-dev flex bison python python-serial ninja-build
-
-    - name: install
-      run: |
+        sudo apt install -y gcc git wget make libncurses-dev flex bison python3 python3-serial ninja-build
+        curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+        python3 get-pip.py
         wget https://github.com/espressif/ESP8266_RTOS_SDK/releases/download/v3.4/ESP8266_RTOS_SDK-v3.4.zip
         unzip ESP8266_RTOS_SDK-v3.4.zip
-        sudo ./ESP8266_RTOS_SDK/install.sh
-
-    - name: script
-      id: script
-      run: |
-        . ./ESP8266_RTOS_SDK/export.sh
-        cd examples
-        idf.py build
-####
-####
-####
-  esp32-test:
-    runs-on: ubuntu-18.04
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: before_install
-      run: |
-        sudo apt update
-        sudo apt install -y gcc git wget make libncurses-dev flex bison python3 python3-pip python-serial ninja-build
+        python3 -m pip install --user -r ./ESP8266_RTOS_SDK/requirements.txt
 
     - name: install
       run: |
-        wget https://github.com/espressif/esp-idf/releases/download/v4.3.2/esp-idf-v4.3.2.zip
-        unzip esp-idf-v4.3.2.zip
-        sudo ./esp-idf-v4.3.2/install.sh
+        # sudo ./ESP8266_RTOS_SDK/install.sh
+        wget https://dl.espressif.com/dl/xtensa-lx106-elf-gcc8_4_0-esp-2020r3-linux-amd64.tar.gz
+        tar -xzf xtensa-lx106-elf-gcc8_4_0-esp-2020r3-linux-amd64.tar.gz
 
     - name: script
       id: script
       run: |
-        . ./esp-idf-v4.3.2/export.sh
+        export PATH="$PATH:$PWD/xtensa-lx106-elf/bin"
+        export IDF_PATH=$PWD/ESP8266_RTOS_SDK
         cd examples
-        idf.py build
+        python3 ../ESP8266_RTOS_SDK/tools/idf.py build
 
-
-
+  esp32-series-build:
+    runs-on: ubuntu-20.04
+    continue-on-error: true
+    strategy:
+      matrix:
+        target-hardware: [esp32, esp32c3, esp32s3]
+    steps:
+    - uses: actions/checkout@v4
+    - name: build
+      uses: espressif/esp-idf-ci-action@v1
+      with:
+        esp_idf_version: v4.4.2
+        target: ${{ matrix.target-hardware }}
+        path: './examples/'
