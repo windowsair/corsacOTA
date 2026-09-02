@@ -14,7 +14,7 @@ on:
 
 jobs:
   esp8266-test:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
 
@@ -43,16 +43,17 @@ jobs:
         python3 ../ESP8266_RTOS_SDK/tools/idf.py build
 
   esp32-series-build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     continue-on-error: true
     strategy:
       matrix:
         target-hardware: [esp32, esp32c3, esp32s3]
+        esp-idf-version: [v6.1, v5.5.5, v5.4.4, v5.3.5, v5.2.7]
     steps:
     - uses: actions/checkout@v4
     - name: build
       uses: espressif/esp-idf-ci-action@v1
       with:
-        esp_idf_version: v4.4.2
+        esp_idf_version: ${{ matrix.esp-idf-version }}
         target: ${{ matrix.target-hardware }}
         path: './examples/'
