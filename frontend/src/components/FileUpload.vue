@@ -13,7 +13,7 @@
       rounded-lg
       shadow-md
       tracking-wide
-      border border-blue
+      border border-blue-50
       cursor-pointer
       ease-linear
       transition-all
@@ -96,7 +96,7 @@
         @change="handleUpload"
       />
       <small
-        :class="`text-gray-600 flex overflow-ellipsis max-w-xl text-sm lg:text-sm`"
+        :class="`text-gray-600 flex text-ellipsis max-w-xl text-sm lg:text-sm`"
       >
         <slot name="file" :files="files" :uploadInfo="uploadInfo">{{
           uploadInfo
@@ -165,7 +165,7 @@
             font-mono
             px-3
             py-3
-            placeholder-gray-400
+            placeholder:text-gray-400
             text-gray-600
             relative
             bg-white
@@ -173,7 +173,7 @@
             text-sm
             border
             outline-none
-            focus:outline-none focus:ring
+            focus:outline-none focus:ring-3 focus:ring-blue-500/50
           "
         />
         <div
