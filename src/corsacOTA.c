@@ -30,9 +30,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "mbedtls/base64.h"
-#include "mbedtls/sha1.h"
-
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
@@ -83,6 +80,16 @@
 #include "hal/wdt_hal.h"
 #include "hal/wdt_types.h"
 #include "soc/rtc.h"
+#endif
+
+#include "mbedtls/base64.h"
+#if (defined CO_TARGET_ESP8266) || ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+    #define CO_USE_MBEDTLS_SHA1 1
+    #include "mbedtls/sha1.h"
+#else
+    #include "psa/crypto.h"
+    #define ESP_ERR_FLASH_OP_FAIL    (ESP_ERR_FLASH_BASE + 1)
+    #define ESP_ERR_FLASH_OP_TIMEOUT (ESP_ERR_FLASH_BASE + 2)
 #endif
 
 #if (!defined CO_TARGET_ESP8266) && (!defined CO_TARGET_ESP32) && (!defined CONFIG_IDF_TARGET_ESP32S2) && (!defined CONFIG_IDF_TARGET_ESP32C3) && (!defined CONFIG_IDF_TARGET_ESP32S3)
@@ -350,7 +357,10 @@ void CO_NO_RETURN co_hardware_restart() {
 #elif (CO_TARGET_ESP32C3)
 extern void uart_tx_wait_idle(uint8_t uart_no);
 extern void esp_reset_reason_set_hint(esp_reset_reason_t hint);
-extern void riscv_global_interrupts_disable(void);
+static inline void co_riscv_global_interrupts_disable(void)
+{
+    RV_CLEAR_CSR(mstatus, MSTATUS_MIE);
+}
 /**
  * @brief In some cases, reboot operation cannot be completed properly, so we take a forced reboot.
  *
@@ -359,7 +369,7 @@ void CO_NO_RETURN co_hardware_restart() {
     wdt_hal_context_t rtc_wdt_ctx;
     uint32_t stage_timeout_ticks;
 
-    riscv_global_interrupts_disable(); // disable all interrupts
+    co_riscv_global_interrupts_disable(); // disable all interrupts
 
     uart_tx_wait_idle(0);
     uart_tx_wait_idle(1);
@@ -800,7 +810,7 @@ static void co_websocket_process_binary(uint8_t *data, size_t len) {
 
         global_cb->ota.last_index_offset = global_cb->ota.offset;
 
-        snprintf(res, 32, "state=%s&offset=%d", is_done ? "done" : "ready", global_cb->ota.offset);
+        snprintf(res, 32, "state=%s&offset=%ld", is_done ? "done" : "ready", (long)global_cb->ota.offset);
 
         if (is_done) {
             err_msg = co_ota_end();
@@ -1194,7 +1204,13 @@ static void co_http_error_400_response(co_cb_t *cb, co_socket_cb_t *scb) {
 #define WS_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 int co_sha1(const unsigned char *src, size_t src_len, unsigned char *dst) {
+#ifdef CO_USE_MBEDTLS_SHA1
     return mbedtls_sha1_ret(src, src_len, dst);
+#else
+    size_t hash_len = 0;
+    psa_status_t status = psa_hash_compute(PSA_ALG_SHA_1, src, src_len, dst, 20, &hash_len);
+    return (status == PSA_SUCCESS && hash_len == 20) ? 0 : -1;
+#endif
 }
 
 int co_base64_encode(unsigned char *dst, size_t dst_len, size_t *written_len, unsigned char *src, size_t src_len) {
