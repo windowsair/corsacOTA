@@ -1,0 +1,10 @@
+menu "corsacOTA configuration"
+
+config CORSACOTA_ENABLE
+    bool "Enable corsacOTA"
+    default y
+    depends on !PARTITION_TABLE_SINGLE_APP
+    help
+        Enable the corsacOTA websocket OTA server.
+
+endmenu

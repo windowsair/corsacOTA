@@ -1,6 +1,8 @@
 # Use as component
-set(COMPONENT_ADD_INCLUDEDIRS "./src")
-set(COMPONENT_SRCS "./src/corsacOTA.c")
+if(CONFIG_CORSACOTA_ENABLE)
+    set(COMPONENT_ADD_INCLUDEDIRS "./src")
+    set(COMPONENT_SRCS "./src/corsacOTA.c")
+endif()
 set(COMPONENT_REQUIRES app_update mbedtls freertos)
 
 if(NOT IDF_TARGET STREQUAL "esp8266")
